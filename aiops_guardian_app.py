@@ -2,7 +2,7 @@ import streamlit as st
 import openai
 
 # Replace with your OpenAI key
-client = openai.OpenAI(api_key="sk-...")  # paste your real key here
+client = openai.OpenAI(api_key="sk-...UJ4A")  # paste your real key here
 
 # Sample log datasets (simulated from ELK, Prometheus, Datadog)
 sample_logs = {
