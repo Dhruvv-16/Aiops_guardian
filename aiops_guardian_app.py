@@ -1,122 +1,87 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-from datetime import timedelta
-from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-import seaborn as sns
+import openai
 
-# Sample logs, replace with real data ingestion from Prometheus, Datadog, ELK, etc.
-logs = [
-    {'timestamp': '2025-04-23 10:00', 'metric_value': 200, 'message': 'Service A started', 'severity': 'INFO', 'component': 'Service A'},
-    {'timestamp': '2025-04-23 10:05', 'metric_value': 1000, 'message': 'Error connecting to DB', 'severity': 'ERROR', 'component': 'DB'},
-    {'timestamp': '2025-04-23 10:10', 'metric_value': 500, 'message': 'Service A response time high', 'severity': 'WARNING', 'component': 'Service A'},
-    {'timestamp': '2025-04-23 10:15', 'metric_value': 300, 'message': 'Service A finished successfully', 'severity': 'INFO', 'component': 'Service A'},
-]
+# Initialize OpenAI client
+client = openai.OpenAI(api_key="sk-...")  # Replace with your actual key
 
-# Simulated log ingestion
-def ingest_logs():
-    # Replace with API calls to real-time data sources like Prometheus, Datadog, or ELK
-    return logs
+# Simulated logs from ELK, Prometheus, Datadog
+sample_logs = {
+    "ELK": [
+        "ERROR: Payment service failed to connect to database at 10.0.0.4:5432",
+        "WARNING: Auth microservice returned 401 Unauthorized after patch deployment"
+    ],
+    "Prometheus": [
+        "ALERT: High CPU usage detected on node-1, threshold 85%",
+        "ALERT: 5xx error rate spike on checkout-service > 30% over 5m window"
+    ],
+    "Datadog": [
+        "Service 'inventory-api' crashed with exit code 137",
+        "Timeout connecting to Redis cache in product-service"
+    ]
+}
 
-# Understanding log type and severity, and classifying incidents
-def analyze_log(log):
-    if log['severity'] == 'ERROR':
-        return "Critical Error: Immediate attention required."
-    elif log['severity'] == 'WARNING':
-        return "Warning: Potential issue detected, monitor closely."
-    elif log['severity'] == 'INFO':
-        return "Info: All systems operational."
+def analyze_log(log_text):
+    prompt = f"""
+    You are AIOps Guardian, an AI assistant for DevOps teams.
+    Analyze this log and return:
+    - Severity: (Critical, Warning, Info)
+    - Issue:
+    - Suggested Fix:
+
+    Log: {log_text}
+    """
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful DevOps AI assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.3
+    )
+    return response.choices[0].message.content.strip()
+
+def extract_severity(ai_response):
+    for line in ai_response.splitlines():
+        if "Severity" in line:
+            return line.split(":")[1].strip()
+    return "Unknown"
+
+def get_color(severity):
+    severity = severity.lower()
+    if severity == "critical":
+        return "#FF4B4B"
+    elif severity == "warning":
+        return "#FFA500"
+    elif severity == "info":
+        return "#1E90FF"
     else:
-        return "Unknown severity level."
+        return "#888888"
 
-# Predicting incidents (Using simple anomaly detection as a placeholder for predictive modeling)
-def predict_incidents(logs_data):
-    # Use IsolationForest to detect anomalies in the metrics (metric_value)
-    model = IsolationForest(contamination=0.1)
-    metric_values = [log['metric_value'] for log in logs_data]
-    scaler = StandardScaler()
-    metric_values_scaled = scaler.fit_transform(np.array(metric_values).reshape(-1, 1))
-    model.fit(metric_values_scaled)
-    
-    predictions = model.predict(metric_values_scaled)
-    incident_indices = [i for i, pred in enumerate(predictions) if pred == -1]
-    
-    incidents = []
-    for i in incident_indices:
-        incidents.append(logs_data[i])
-    
-    return incidents
+# --- Streamlit UI ---
+st.set_page_config(page_title="AIOps Guardian", layout="centered")
+st.title("🛡️ AIOps Guardian – Log Insight Assistant")
 
-# Suggesting mitigations based on log severity and content
-def suggest_mitigation(log):
-    if log['severity'] == 'ERROR':
-        if 'DB' in log['component']:
-            return "Check database health, connection pool, and scaling."
-        elif 'Deployment' in log['message']:
-            return "Rollback to stable version, investigate deployment pipeline."
-    elif log['severity'] == 'WARNING':
-        if 'Service A' in log['component']:
-            return "Service A response time is high. Scale or optimize."
-    elif log['severity'] == 'INFO':
-        return "System is running normally. No action needed."
-    return "No mitigation available."
+st.markdown("Analyze multiple logs simultaneously and get AI-powered diagnosis with severity tagging.")
 
-# Visualizing metric trends with anomalies
-def plot_metric_trends(log_data, anomalies):
-    timestamps = [log['timestamp'] for log in log_data]
-    metric_values = [log['metric_value'] for log in log_data]
-    
-    plt.figure(figsize=(10, 5))
-    plt.plot(timestamps, metric_values, label='Metric Value', color='blue', marker='o')
-    
-    # Highlight anomalies
-    anomaly_times = [timestamps[i] for i in range(len(anomalies)) if anomalies[i] == -1]
-    anomaly_values = [metric_values[i] for i in range(len(anomalies)) if anomalies[i] == -1]
-    
-    plt.scatter(anomaly_times, anomaly_values, color='red', label='Anomalies', zorder=5)
-    plt.xlabel('Timestamp')
-    plt.ylabel('Metric Value')
-    plt.title('Metric Trends with Anomalies')
-    plt.xticks(rotation=45)
-    plt.legend()
-    st.pyplot(plt)
+log_source = st.selectbox("Choose a Log Source", list(sample_logs.keys()))
+selected_logs = st.multiselect("Select Logs to Analyze", sample_logs[log_source])
 
-# Main Streamlit app
-def main():
-    st.title("AIOps Guardian - Real-Time Log Monitoring")
-
-    # Step 1: Ingest logs
-    logs_data = ingest_logs()
-
-    # Step 2: Analyze logs and understand their type
-    st.subheader("Log Analysis")
-    analyzed_logs = [analyze_log(log) for log in logs_data]
-    for i, analysis in enumerate(analyzed_logs):
-        st.write(f"Log {i+1}: {analysis}")
-
-    # Step 3: Predict potential incidents based on log data
-    st.subheader("Incident Prediction")
-    incidents = predict_incidents(logs_data)
-    if incidents:
-        st.write("Predicted Incidents:")
-        for incident in incidents:
-            st.write(f"Incident: {incident['message']} | Component: {incident['component']}")
+if st.button("🧠 Run AI Analysis on Selected Logs"):
+    if not selected_logs:
+        st.warning("Please select at least one log.")
     else:
-        st.success("No incidents predicted.")
+        st.markdown("### 📊 Analysis Results")
+        for idx, log_entry in enumerate(selected_logs, 1):
+            with st.spinner(f"Analyzing log {idx}..."):
+                analysis = analyze_log(log_entry)
+                severity = extract_severity(analysis)
+                color = get_color(severity)
 
-    # Step 4: Suggest mitigations based on log severity
-    st.subheader("Suggested Mitigations")
-    for i, log in enumerate(logs_data):
-        mitigation = suggest_mitigation(log)
-        st.write(f"Log {i+1} Mitigation: {mitigation}")
-
-    # Step 5: Visualize metric trends and anomalies
-    st.subheader("Metric Trend Visualization")
-    anomalies = [1 if log['severity'] == 'INFO' else -1 for log in logs_data]
-    plot_metric_trends(logs_data, anomalies)
-
-# Run the app
-if __name__ == "__main__":
-    main()
+                st.markdown(f"""
+                <div style="border-left: 6px solid {color}; padding: 1em; margin-bottom: 1em; background-color: #f9f9f9; border-radius: 6px;">
+                    <h4 style="margin: 0 0 0.5em 0;">📝 Log Entry {idx}</h4>
+                    <p><strong>Raw Log:</strong> {log_entry}</p>
+                    <p style="color: {color};"><strong>🚦 Severity:</strong> {severity}</p>
+                    <pre style="white-space: pre-wrap; background-color: #fff; padding: 0.5em; border-radius: 4px;">{analysis}</pre>
+                </div>
+                """, unsafe_allow_html=True)
